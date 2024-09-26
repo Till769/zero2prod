@@ -10,12 +10,12 @@ async fn health_check_works() {
         .send()
         .await
         .expect("Failes to execute request.");
-    
+
     assert!(response.status().is_success());
     assert_eq!(Some(0), response.content_length());
 }
 
- fn spawn_app() {
+fn spawn_app() {
     let server = zero2prod::run().expect("Failes to bind address");
-     let _ = tokio::spawn(server);
+    let _ = tokio::spawn(server);
 }
