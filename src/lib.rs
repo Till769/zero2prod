@@ -6,3 +6,5 @@ pub mod startup;
 pub mod domain;
 
 pub mod telemetry;
+
+pub mod email_client;
