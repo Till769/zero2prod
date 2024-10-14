@@ -24,9 +24,9 @@ impl EmailClient {
             authorization_token,
         }
     }
-    pub async fn send_mail(
+    pub async fn send_email(
         &self,
-        recipient: SubscriberEmail,
+        recipient: &SubscriberEmail,
         subject: &str,
         html_content: &str,
         text_content: &str,
@@ -39,15 +39,16 @@ impl EmailClient {
             html_body: html_content,
             text_body: text_content,
         };
-        let builder = self
-            .http_client
+        self.http_client
             .post(&url)
             .header(
                 "X-Postmark-Server-Token",
                 self.authorization_token.expose_secret(),
             )
-            .json(&request_body);
-        builder.send().await?.error_for_status()?;
+            .json(&request_body)
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 }
@@ -128,7 +129,7 @@ mod tests {
             .await;
 
         let _ = email_client
-            .send_mail(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
     }
 
@@ -143,7 +144,7 @@ mod tests {
             .mount(&mock_server)
             .await;
         let outcome = email_client
-            .send_mail(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
 
         assert_ok!(outcome);
@@ -160,7 +161,7 @@ mod tests {
             .mount(&mock_server)
             .await;
         let outcome = email_client
-            .send_mail(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
 
         assert_err!(outcome);
@@ -179,7 +180,7 @@ mod tests {
             .mount(&mock_server)
             .await;
         let outcome = email_client
-            .send_mail(email(), &subject(), &content(), &content())
+            .send_email(&email(), &subject(), &content(), &content())
             .await;
 
         assert_err!(outcome);
