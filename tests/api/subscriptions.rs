@@ -1,18 +1,11 @@
 use crate::helpers::spawn_app;
-use sqlx::{Connection, PgConnection};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
-use zero2prod::configuration::get_configuration;
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
     let test_app = spawn_app().await;
-    let configuration = get_configuration().expect("Failed to get configuration.");
-    let mut connection = PgConnection::connect_with(&configuration.database.with_db())
-        .await
-        .expect("Failed to connect to Postgres");
-
     // Act
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
     Mock::given(path("/email"))
@@ -26,7 +19,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name from subscriptions")
-        .fetch_one(&mut connection)
+        .fetch_one(&test_app.db_pool)
         .await
         .expect("Failed to fetch saved subscriptions");
 
@@ -139,4 +132,134 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
     let confirmation_link = app.get_confirmation_links(&email_request);
 
     assert_eq!(confirmation_link.html, confirmation_link.plain_text);
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_second_confirmation() {
+    // Arrange
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    // Mock Email-Server expect 2 Post Requests
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(2)
+        .mount(&app.email_server)
+        .await;
+
+    // First Subscription
+    app.post_subscriptions(body.into()).await;
+    // Second Subscription
+    app.post_subscriptions(body.into()).await;
+}
+
+#[tokio::test]
+async fn after_second_subscription_there_is_only_one_subscription_token() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    // First Subscription
+    app.post_subscriptions(body.into()).await;
+
+    // Get subscriber ID
+    let record = sqlx::query!("SELECT id FROM subscriptions")
+        .fetch_one(&app.db_pool)
+        .await
+        .expect("Failed to fetch saved subscriptions");
+    let subscriber_id = record.id;
+
+    // Second Subscription
+    app.post_subscriptions(body.into()).await;
+
+    // Get record for subscriber_id in subscription_tokens db
+    let record = sqlx::query!(
+        "SELECT subscription_token FROM subscription_tokens WHERE subscriber_id=$1",
+        subscriber_id
+    )
+    .fetch_all(&app.db_pool)
+    .await
+    .expect("Failed to fetch saved subscription_tokens");
+
+    assert_eq!(record.len(), 1);
+}
+
+#[tokio::test]
+async fn update_subscription_token_after_second_subscription() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    // First Subscription
+    app.post_subscriptions(body.into()).await;
+
+    let record = sqlx::query!("SELECT id FROM subscriptions")
+        .fetch_one(&app.db_pool)
+        .await
+        .expect("Failed to fetch saved subscriptions");
+    let subscription_id = record.id;
+
+    let first_subscription_token = sqlx::query!(
+        "SELECT subscription_token FROM subscription_tokens WHERE subscriber_id = $1",
+        subscription_id
+    )
+    .fetch_one(&app.db_pool)
+    .await
+    .expect("Failed to fetch first subscription token")
+    .subscription_token;
+
+    // Second Subscription
+    app.post_subscriptions(body.into()).await;
+
+    let second_subscription_token = sqlx::query!(
+        "SELECT subscription_token FROM subscription_tokens WHERE subscriber_id = $1",
+        subscription_id
+    )
+    .fetch_one(&app.db_pool)
+    .await
+    .expect("Failed to fetch second subscription token")
+    .subscription_token;
+
+    assert_ne!(first_subscription_token, second_subscription_token);
+}
+
+#[tokio::test]
+async fn second_subscribe_sends_a_confirmation_email_with_a_new_link() {
+    // Arrange
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    // Act First subscription
+    app.post_subscriptions(body.into()).await;
+
+    // Assert
+    let first_email_request = &app.email_server.received_requests().await.unwrap()[0];
+    let first_confirmation_link = app.get_confirmation_links(&first_email_request);
+
+    // Act second subscription
+    app.post_subscriptions(body.into()).await;
+
+    // Assert
+    let second_email_request = &app.email_server.received_requests().await.unwrap()[1];
+    let second_confirmation_link = app.get_confirmation_links(&second_email_request);
+    assert_ne!(
+        first_confirmation_link.plain_text,
+        second_confirmation_link.plain_text
+    );
+    assert_ne!(first_confirmation_link.html, second_confirmation_link.html);
 }
