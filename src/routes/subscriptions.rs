@@ -116,7 +116,7 @@ pub async fn send_confirmation_email(
     );
 
     email_client
-        .send_email(&new_subscriber.email, "Welcome!", &html_body, &plain_body)
+        .send_email(&new_subscriber.email, "Welcome!", html_body, plain_body)
         .await
 }
 
@@ -188,7 +188,7 @@ pub async fn store_token(
     // Check if for the user a subscription_token already exist
     let existing_token = check_for_existing_token(transaction, subscriber_id).await?;
 
-    if let Some(_) = existing_token {
+    if existing_token.is_some() {
         tracing::info!(
             "Subscription token for subscriber: {:?} already exists",
             subscriber_id
