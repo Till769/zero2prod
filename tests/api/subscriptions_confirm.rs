@@ -1,5 +1,4 @@
 use crate::helpers::spawn_app;
-use reqwest::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
@@ -62,4 +61,70 @@ async fn clicking_on_the_confirmation_link_confirms_a_subscriber() {
     assert_eq!(saved.email, "ursula_le_guin@gmail.com");
     assert_eq!(saved.name, "le guin");
     assert_eq!(saved.status, "confirmed");
+}
+
+#[tokio::test]
+async fn clicking_on_the_old_confirmation_link_gives_a_400() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+    app.post_subscriptions(body.into()).await;
+
+    let email_request = &app.email_server.received_requests().await.unwrap()[0];
+    let confirmation_link = app.get_confirmation_links(&email_request);
+
+    let response = reqwest::get(confirmation_link.html).await.unwrap();
+
+    assert_eq!(response.status().as_u16(), 401);
+}
+
+#[tokio::test]
+async fn clicking_on_the_new_confirmation_link_gives_a_200() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+    app.post_subscriptions(body.into()).await;
+
+    let email_request = &app.email_server.received_requests().await.unwrap()[1];
+    let confirmation_link = app.get_confirmation_links(&email_request);
+
+    let response = reqwest::get(confirmation_link.html).await.unwrap();
+
+    assert_eq!(response.status().as_u16(), 200);
+}
+
+#[tokio::test]
+async fn clicking_on_the_confirmation_link_twice_gives_a_200() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+
+    let email_request = &app.email_server.received_requests().await.unwrap()[0];
+    let confirmation_link = app.get_confirmation_links(&email_request);
+
+    reqwest::get(confirmation_link.html.clone()).await.unwrap();
+    let response = reqwest::get(confirmation_link.html).await.unwrap();
+
+    assert_eq!(response.status().as_u16(), 200);
 }
