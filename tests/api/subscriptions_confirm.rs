@@ -128,3 +128,26 @@ async fn clicking_on_the_confirmation_link_twice_gives_a_200() {
 
     assert_eq!(response.status().as_u16(), 200);
 }
+
+#[tokio::test]
+async fn clicking_on_a_invalid_confirmation_link_gives_a_401() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+
+    let confirmation_link = format!(
+        "{}/subscriptions/confirm?subscription_token=test",
+        app.address
+    );
+
+    let response = reqwest::get(confirmation_link).await.unwrap();
+
+    assert_eq!(response.status().as_u16(), 401);
+}

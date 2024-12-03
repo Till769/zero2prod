@@ -28,17 +28,22 @@ unicode-segmentation = "1"
 validator = "0.16"
 url = "2.5.2"
 rand = { version = "0.8", features = ["std_rng"] }
+tera = { version = "1", default-features = true }
+thiserror = "1"
+anyhow = "1"
+base64 = "0.22.1"
+argon2 = { version = "0.4", features = ["std"] }
 
 [dependencies.sqlx]
 version = "0.8"
 default-features = false
 features = [
-    "runtime-tokio-rustls",
-    "macros",
-    "postgres",
-    "uuid",
-    "chrono",
-    "migrate"
+  "runtime-tokio-rustls",
+  "macros",
+  "postgres",
+  "uuid",
+  "chrono",
+  "migrate",
 ]
 
 [dependencies.reqwest]
